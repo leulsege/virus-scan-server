@@ -9,6 +9,7 @@ This guide covers setting up the virus scan server on a **public server** with I
 ### Step 1: Deploy Virus Scan Server on Public Server
 
 SSH into your server:
+
 ```bash
 ssh user@196.188.250.141
 ```
@@ -61,6 +62,7 @@ ALLOWED_ORIGINS=https://your-backend.vercel.app,http://localhost:3000
 ```
 
 **Generate API Key:**
+
 ```bash
 openssl rand -hex 32
 # Copy the output and paste into API_KEY above
@@ -90,6 +92,7 @@ sudo ufw status
 ### Step 5: Start Virus Scan Server
 
 **Option A: Manual Start (for testing)**
+
 ```bash
 cd /opt/virus-scan-server
 npm start
@@ -98,11 +101,13 @@ npm start
 **Option B: System Service (Recommended for production)**
 
 Create service file:
+
 ```bash
 sudo nano /etc/systemd/system/virus-scan-server.service
 ```
 
 Paste:
+
 ```ini
 [Unit]
 Description=TradeMatch Virus Scan Server
@@ -126,6 +131,7 @@ WantedBy=multi-user.target
 Replace `YOUR_USERNAME` with your actual username.
 
 Enable and start:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable virus-scan-server
@@ -136,16 +142,19 @@ sudo systemctl status virus-scan-server
 ### Step 6: Test Server
 
 From the server itself:
+
 ```bash
 curl http://localhost:8080/health
 ```
 
 From your local machine:
+
 ```bash
 curl http://196.188.250.141:8080/health
 ```
 
 You should see:
+
 ```json
 {
   "status": "healthy",
@@ -159,6 +168,7 @@ You should see:
 In **Vercel Dashboard** → Your Project → Settings → Environment Variables:
 
 Add:
+
 ```env
 VIRUS_SCAN_URL=http://196.188.250.141:8080
 VIRUS_SCAN_API_KEY=your-very-secure-random-api-key-here
@@ -176,16 +186,19 @@ VIRUS_SCAN_ENABLED=true
 For production, set up HTTPS with Nginx reverse proxy:
 
 **Install Nginx:**
+
 ```bash
 sudo apt install nginx
 ```
 
 **Install Certbot (Let's Encrypt):**
+
 ```bash
 sudo apt install certbot python3-certbot-nginx
 ```
 
 **Get SSL Certificate:**
+
 ```bash
 # Option 1: If you have a domain pointing to this IP
 sudo certbot --nginx -d scan.yourdomain.com
@@ -198,11 +211,13 @@ sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 ```
 
 **Configure Nginx:**
+
 ```bash
 sudo nano /etc/nginx/sites-available/virus-scan
 ```
 
 Add:
+
 ```nginx
 server {
     listen 80;
@@ -226,6 +241,7 @@ server {
 ```
 
 Enable site:
+
 ```bash
 sudo ln -s /etc/nginx/sites-available/virus-scan /etc/nginx/sites-enabled/
 sudo nginx -t
@@ -233,6 +249,7 @@ sudo systemctl reload nginx
 ```
 
 **Update firewall:**
+
 ```bash
 sudo ufw allow 80/tcp   # HTTP
 sudo ufw allow 443/tcp  # HTTPS
@@ -241,6 +258,7 @@ sudo ufw delete allow 8080/tcp
 ```
 
 **Update backend `.env`:**
+
 ```env
 VIRUS_SCAN_URL=https://196.188.250.141
 # Or if using domain: VIRUS_SCAN_URL=https://scan.yourdomain.com
@@ -249,11 +267,13 @@ VIRUS_SCAN_URL=https://196.188.250.141
 ### 2. Restrict API Access
 
 **Use Strong API Key:**
+
 ```bash
 openssl rand -hex 32
 ```
 
 **Restrict CORS Origins** in `virus-scan-server/.env`:
+
 ```env
 ALLOWED_ORIGINS=https://your-backend.vercel.app
 # Don't use * in production
@@ -271,6 +291,7 @@ sudo nano /etc/fail2ban/jail.local
 ```
 
 Add:
+
 ```ini
 [virus-scan]
 enabled = true
@@ -300,6 +321,7 @@ sudo systemctl restart virus-scan-server
 ## Configuration Summary
 
 ### Virus Scan Server (`/opt/virus-scan-server/.env`):
+
 ```env
 PORT=8080
 USE_CLAMD=false
@@ -308,6 +330,7 @@ ALLOWED_ORIGINS=https://your-backend.vercel.app
 ```
 
 ### Backend/Vercel Environment Variables:
+
 ```env
 VIRUS_SCAN_URL=http://196.188.250.141:8080
 # Or with HTTPS: VIRUS_SCAN_URL=https://196.188.250.141
@@ -321,12 +344,14 @@ VIRUS_SCAN_ENABLED=true
 ## Testing
 
 ### 1. Test Health Endpoint
+
 ```bash
 # From any machine
 curl http://196.188.250.141:8080/health
 ```
 
 ### 2. Test File Scan
+
 ```bash
 # Create test file
 echo "test content" > /tmp/test.txt
@@ -345,6 +370,7 @@ curl -X POST http://196.188.250.141:8080/scan \
 ### 3. Test from Backend
 
 Upload a document through your application and check:
+
 - Backend logs (Vercel dashboard)
 - Virus scan server logs: `sudo journalctl -u virus-scan-server -f`
 
@@ -353,6 +379,7 @@ Upload a document through your application and check:
 ### Cannot connect from Vercel
 
 **Check:**
+
 1. Firewall allows port 8080: `sudo ufw status`
 2. Server is running: `sudo systemctl status virus-scan-server`
 3. Port is listening: `sudo netstat -tlnp | grep 8080`
@@ -361,6 +388,7 @@ Upload a document through your application and check:
 ### Connection timeout
 
 **Check:**
+
 1. Firewall isn't blocking: `sudo ufw allow 8080/tcp`
 2. Cloud provider firewall (AWS Security Groups, DigitalOcean Firewall, etc.)
 3. Server has enough resources (CPU, memory)
@@ -368,6 +396,7 @@ Upload a document through your application and check:
 ### "Invalid API key"
 
 **Check:**
+
 1. `API_KEY` in `virus-scan-server/.env` matches `VIRUS_SCAN_API_KEY` in Vercel
 2. No typos or extra spaces
 3. Regenerate key if unsure
@@ -375,6 +404,7 @@ Upload a document through your application and check:
 ### ClamAV not found
 
 **Check:**
+
 1. ClamAV installed: `clamscan --version`
 2. Virus definitions updated: `sudo freshclam`
 3. Check logs: `sudo journalctl -u virus-scan-server -f`
@@ -412,3 +442,4 @@ sudo systemctl status clamav-daemon
 **Port**: `8080` (or `443` with HTTPS)  
 **Health Check**: `http://196.188.250.141:8080/health`  
 **Backend Config**: `VIRUS_SCAN_URL=http://196.188.250.141:8080`
+

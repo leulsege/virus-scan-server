@@ -10,6 +10,7 @@ import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import net from 'net';
 import os from 'os';
+import { convertToSafeFormat } from './converters.js';
 
 dotenv.config();
 
@@ -211,7 +212,48 @@ app.post('/scan', async (req, res) => {
         scanResult = await scanWithClamscan(tempFilePath);
       }
       
-      // Clean up temp file
+      // If file is safe, convert to safe format
+      let convertedFile = null;
+      let conversionInfo = null;
+      
+      if (scanResult.safe) {
+        try {
+          const conversionResult = await convertToSafeFormat(
+            tempFilePath,
+            filename || 'file',
+            TEMP_DIR
+          );
+          
+          convertedFile = conversionResult.buffer.toString('base64');
+          conversionInfo = {
+            originalFilename: filename || 'file',
+            convertedFilename: conversionResult.filename,
+            conversionMethod: conversionResult.conversionMethod,
+            fileType: conversionResult.fileType
+          };
+          
+          // Clean up converted file after reading (only if it's a new file)
+          if (conversionResult.needsCleanup && conversionResult.outputPath) {
+            try {
+              if (fs.existsSync(conversionResult.outputPath)) {
+                fs.unlinkSync(conversionResult.outputPath);
+              }
+            } catch (unlinkErr) {
+              console.warn(`Failed to delete converted file:`, unlinkErr);
+            }
+          }
+        } catch (conversionError) {
+          console.error('File conversion error:', conversionError);
+          // Continue with response even if conversion fails
+          // The file is still safe, just not converted
+          conversionInfo = {
+            error: conversionError.message,
+            note: 'File is safe but conversion failed'
+          };
+        }
+      }
+      
+      // Clean up original temp file
       try {
         fs.unlinkSync(tempFilePath);
       } catch (unlinkErr) {
@@ -221,22 +263,25 @@ app.post('/scan', async (req, res) => {
       // Generate response signature if API key is configured
       const responseTimestamp = Date.now();
       let responseSignature = undefined;
+      
+      const responseData = {
+        success: true,
+        result: scanResult,
+        ...(convertedFile && { convertedFile }),
+        ...(conversionInfo && { conversionInfo }),
+        timestamp: responseTimestamp
+      };
+      
       if (API_KEY) {
-        const responseData = JSON.stringify({
-          success: true,
-          result: scanResult,
-          timestamp: responseTimestamp
-        });
+        const responseDataString = JSON.stringify(responseData);
         responseSignature = crypto
           .createHmac('sha256', API_KEY)
-          .update(responseData)
+          .update(responseDataString)
           .digest('hex');
       }
       
       res.json({
-        success: true,
-        result: scanResult,
-        timestamp: responseTimestamp,
+        ...responseData,
         ...(responseSignature && { signature: responseSignature })
       });
       

@@ -6,6 +6,12 @@ A Node.js server that provides virus scanning capabilities using ClamAV for the 
 
 - ✅ Scans files using ClamAV
 - ✅ Supports both `clamd` daemon and `clamscan` command
+- ✅ **Automatic file conversion to safe formats** after successful scan
+  - DOCX → PDF (using LibreOffice)
+  - HEIC/HEIF → WEBP (using libvips)
+  - PNG/JPG/JPEG/WEBP → WEBP (using libvips)
+  - PDF → Sanitized PDF (using qpdf or Ghostscript)
+  - TXT → TXT (no conversion, safe rendering)
 - ✅ HMAC-SHA256 signature verification for secure communication
 - ✅ API key authentication
 - ✅ Handles base64 encoded files
@@ -32,7 +38,27 @@ sudo systemctl enable clamav-freshclam
 sudo freshclam
 ```
 
-### Step 2: Configure ClamAV (Optional)
+### Step 2: Install File Conversion Dependencies
+
+The server automatically converts files to safe formats after scanning. Install the required tools:
+
+```bash
+# Install LibreOffice (for DOCX → PDF)
+sudo apt install -y libreoffice --no-install-recommends
+
+# Install libvips (for image → WEBP conversion)
+sudo apt install -y libvips-tools
+
+# Install qpdf (for PDF sanitization - recommended)
+sudo apt install -y qpdf
+
+# Install Ghostscript (for PDF sanitization - fallback, optional)
+sudo apt install -y ghostscript
+```
+
+**Note:** See [CONVERSION_SETUP.md](./CONVERSION_SETUP.md) for detailed installation instructions and troubleshooting.
+
+### Step 3: Configure ClamAV (Optional)
 
 If you want to use the `clamd` daemon for better performance:
 
@@ -54,7 +80,7 @@ Restart clamd:
 sudo systemctl restart clamav-daemon
 ```
 
-### Step 3: Install Node.js (if not already installed)
+### Step 4: Install Node.js (if not already installed)
 
 ```bash
 # Install Node.js 20.x
@@ -66,7 +92,7 @@ node --version
 npm --version
 ```
 
-### Step 4: Deploy Virus Scan Server
+### Step 5: Deploy Virus Scan Server
 
 ```bash
 # Navigate to your server directory
@@ -89,7 +115,7 @@ cp .env.example .env
 nano .env  # Edit configuration
 ```
 
-### Step 5: Configure Environment
+### Step 6: Configure Environment
 
 Edit `.env` file:
 
@@ -107,7 +133,7 @@ ALLOWED_ORIGINS=*
 openssl rand -hex 32
 ```
 
-### Step 6: Test the Server
+### Step 7: Test the Server
 
 ```bash
 # Start the server
@@ -126,7 +152,7 @@ You should see:
 }
 ```
 
-### Step 7: Set Up as a System Service (Optional but Recommended)
+### Step 8: Set Up as a System Service (Optional but Recommended)
 
 Create a systemd service file:
 
@@ -175,7 +201,7 @@ sudo systemctl status virus-scan-server
 sudo journalctl -u virus-scan-server -f
 ```
 
-### Step 8: Configure Firewall
+### Step 9: Configure Firewall
 
 If you have a firewall enabled:
 
@@ -187,7 +213,7 @@ sudo ufw allow 8080/tcp
 sudo iptables -A INPUT -p tcp --dport 8080 -j ACCEPT
 ```
 
-### Step 9: Set Up SSL/HTTPS (Production)
+### Step 10: Set Up SSL/HTTPS (Production)
 
 For production, set up HTTPS using Nginx reverse proxy:
 
@@ -372,3 +398,4 @@ ExecStart=/usr/bin/node --max-old-space-size=2048 src/index.js
 ## License
 
 MIT
+
