@@ -155,10 +155,21 @@ async function scanWithClamscan(filePath) {
 
 // Main scan endpoint
 app.post('/scan', async (req, res) => {
+  const requestId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+  const startTime = Date.now();
+  
   try {
+    console.log(`[${requestId}] 📥 Scan request received`);
+    console.log(`[${requestId}] Headers:`, {
+      'content-type': req.headers['content-type'],
+      'x-api-key': API_KEY ? '***provided***' : 'not required',
+      'user-agent': req.headers['user-agent'],
+    });
+    
     // Verify API key if configured
     const apiKeyHeader = req.headers['x-api-key'];
     if (API_KEY && apiKeyHeader !== API_KEY) {
+      console.log(`[${requestId}] ❌ Unauthorized: Invalid API key`);
       return res.status(401).json({
         success: false,
         error: 'Unauthorized: Invalid API key'
@@ -166,8 +177,15 @@ app.post('/scan', async (req, res) => {
     }
     
     const { file, filename, timestamp, signature } = req.body;
+    console.log(`[${requestId}] File info:`, {
+      filename: filename || 'unknown',
+      fileSize: file ? `${(Buffer.from(file, 'base64').length / 1024).toFixed(2)} KB` : 'missing',
+      hasSignature: !!signature,
+      timestamp: timestamp ? new Date(timestamp).toISOString() : 'missing',
+    });
     
     if (!file) {
+      console.log(`[${requestId}] ❌ Missing file data`);
       return res.status(400).json({
         success: false,
         error: 'Missing file data (base64 encoded)'
@@ -178,18 +196,22 @@ app.post('/scan', async (req, res) => {
     if (API_KEY && signature && timestamp) {
       const fileBuffer = Buffer.from(file, 'base64');
       if (!verifySignature(fileBuffer.toString('base64'), timestamp, signature, API_KEY)) {
+        console.log(`[${requestId}] ❌ Invalid request signature`);
         return res.status(401).json({
           success: false,
           error: 'Invalid request signature'
         });
       }
+      console.log(`[${requestId}] ✅ Signature verified`);
     }
     
     // Decode base64 file
     let fileBuffer;
     try {
       fileBuffer = Buffer.from(file, 'base64');
+      console.log(`[${requestId}] ✅ File decoded: ${(fileBuffer.length / 1024).toFixed(2)} KB`);
     } catch (err) {
+      console.log(`[${requestId}] ❌ Invalid base64 file data:`, err.message);
       return res.status(400).json({
         success: false,
         error: 'Invalid base64 file data'
@@ -202,21 +224,32 @@ app.post('/scan', async (req, res) => {
     
     try {
       // Write file to temp location
+      console.log(`[${requestId}] 💾 Writing temp file: ${tempFilePath}`);
       fs.writeFileSync(tempFilePath, fileBuffer);
       
       // Scan file
+      console.log(`[${requestId}] 🔍 Starting virus scan (method: ${USE_CLAMD ? 'clamd' : 'clamscan'})`);
+      const scanStartTime = Date.now();
       let scanResult;
       if (USE_CLAMD) {
         scanResult = await scanWithClamd(tempFilePath);
       } else {
         scanResult = await scanWithClamscan(tempFilePath);
       }
+      const scanDuration = Date.now() - scanStartTime;
+      console.log(`[${requestId}] 🔍 Scan completed in ${scanDuration}ms:`, {
+        safe: scanResult.safe,
+        threat: scanResult.threat || 'none',
+        message: scanResult.message,
+      });
       
       // If file is safe, convert to safe format
       let convertedFile = null;
       let conversionInfo = null;
       
       if (scanResult.safe) {
+        console.log(`[${requestId}] 🔄 Starting file conversion`);
+        const conversionStartTime = Date.now();
         try {
           const conversionResult = await convertToSafeFormat(
             tempFilePath,
@@ -232,6 +265,13 @@ app.post('/scan', async (req, res) => {
             fileType: conversionResult.fileType
           };
           
+          const conversionDuration = Date.now() - conversionStartTime;
+          console.log(`[${requestId}] ✅ Conversion completed in ${conversionDuration}ms:`, {
+            method: conversionResult.conversionMethod,
+            fileType: conversionResult.fileType,
+            convertedSize: `${(conversionResult.buffer.length / 1024).toFixed(2)} KB`,
+          });
+          
           // Clean up converted file after reading (only if it's a new file)
           if (conversionResult.needsCleanup && conversionResult.outputPath) {
             try {
@@ -239,11 +279,11 @@ app.post('/scan', async (req, res) => {
                 fs.unlinkSync(conversionResult.outputPath);
               }
             } catch (unlinkErr) {
-              console.warn(`Failed to delete converted file:`, unlinkErr);
+              console.warn(`[${requestId}] ⚠️ Failed to delete converted file:`, unlinkErr);
             }
           }
         } catch (conversionError) {
-          console.error('File conversion error:', conversionError);
+          console.error(`[${requestId}] ❌ File conversion error:`, conversionError);
           // Continue with response even if conversion fails
           // The file is still safe, just not converted
           conversionInfo = {
@@ -251,13 +291,16 @@ app.post('/scan', async (req, res) => {
             note: 'File is safe but conversion failed'
           };
         }
+      } else {
+        console.log(`[${requestId}] 🚫 File blocked - skipping conversion`);
       }
       
       // Clean up original temp file
       try {
         fs.unlinkSync(tempFilePath);
+        console.log(`[${requestId}] 🗑️ Temp file cleaned up`);
       } catch (unlinkErr) {
-        console.warn(`Failed to delete temp file ${tempFilePath}:`, unlinkErr);
+        console.warn(`[${requestId}] ⚠️ Failed to delete temp file ${tempFilePath}:`, unlinkErr);
       }
       
       // Generate response signature if API key is configured
@@ -280,6 +323,9 @@ app.post('/scan', async (req, res) => {
           .digest('hex');
       }
       
+      const totalDuration = Date.now() - startTime;
+      console.log(`[${requestId}] ✅ Request completed in ${totalDuration}ms`);
+      
       res.json({
         ...responseData,
         ...(responseSignature && { signature: responseSignature })
@@ -292,10 +338,11 @@ app.post('/scan', async (req, res) => {
           fs.unlinkSync(tempFilePath);
         }
       } catch (unlinkErr) {
-        console.warn(`Failed to delete temp file on error:`, unlinkErr);
+        console.warn(`[${requestId}] ⚠️ Failed to delete temp file on error:`, unlinkErr);
       }
       
-      console.error('Virus scan error:', scanError);
+      const totalDuration = Date.now() - startTime;
+      console.error(`[${requestId}] ❌ Virus scan error (${totalDuration}ms):`, scanError);
       res.status(500).json({
         success: false,
         error: scanError.message || 'Virus scan failed'
@@ -303,7 +350,8 @@ app.post('/scan', async (req, res) => {
     }
     
   } catch (error) {
-    console.error('Request processing error:', error);
+    const totalDuration = Date.now() - startTime;
+    console.error(`[${requestId}] ❌ Request processing error (${totalDuration}ms):`, error);
     res.status(500).json({
       success: false,
       error: error.message || 'Internal server error'
