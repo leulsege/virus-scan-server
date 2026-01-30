@@ -176,14 +176,12 @@ app.post('/scan', async (req, res) => {
       });
     }
     
-    const { file, filename, timestamp, signature, logoId, callbackUrl } = req.body;
+    const { file, filename, timestamp, signature } = req.body;
     console.log(`[${requestId}] File info:`, {
       filename: filename || 'unknown',
       fileSize: file ? `${(Buffer.from(file, 'base64').length / 1024).toFixed(2)} KB` : 'missing',
       hasSignature: !!signature,
       timestamp: timestamp ? new Date(timestamp).toISOString() : 'missing',
-      logoId: logoId || 'not provided',
-      callbackUrl: callbackUrl || 'not provided',
     });
     
     if (!file) {
@@ -245,26 +243,9 @@ app.post('/scan', async (req, res) => {
         message: scanResult.message,
       });
       
-      // If file is not safe, notify backend and return
+      // If file is not safe, return immediately (no conversion needed)
       if (!scanResult.safe) {
-        console.log(`[${requestId}] 🚫 File blocked - notifying backend`);
-        if (callbackUrl && logoId) {
-          try {
-            await fetch(callbackUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                status: 'BLOCKED',
-                error_message: scanResult.message || `Virus detected: ${scanResult.threat || 'Unknown threat'}`,
-              }),
-            });
-            console.log(`[${requestId}] ✅ Backend notified: BLOCKED`);
-          } catch (callbackErr) {
-            console.error(`[${requestId}] ❌ Failed to notify backend:`, callbackErr);
-          }
-        }
+        console.log(`[${requestId}] 🚫 File blocked - returning result`);
         
         // Clean up temp file
         try {
@@ -278,25 +259,6 @@ app.post('/scan', async (req, res) => {
           success: true,
           result: scanResult,
         });
-      }
-      
-      // File is safe - notify backend to update status to CONVERTING
-      if (callbackUrl && logoId) {
-        try {
-          console.log(`[${requestId}] 📢 Notifying backend: status -> CONVERTING`);
-          await fetch(callbackUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              status: 'CONVERTING',
-            }),
-          });
-          console.log(`[${requestId}] ✅ Backend notified: CONVERTING`);
-        } catch (callbackErr) {
-          console.error(`[${requestId}] ❌ Failed to notify backend:`, callbackErr);
-        }
       }
       
       // Convert to safe format
@@ -339,49 +301,11 @@ app.post('/scan', async (req, res) => {
         }
       } catch (conversionError) {
         console.error(`[${requestId}] ❌ File conversion error:`, conversionError);
-        // Notify backend of conversion failure
-        if (callbackUrl && logoId) {
-          try {
-            await fetch(callbackUrl, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                status: 'FAILED',
-                error_message: `Conversion failed: ${conversionError.message}`,
-              }),
-            });
-          } catch (callbackErr) {
-            console.error(`[${requestId}] ❌ Failed to notify backend of conversion failure:`, callbackErr);
-          }
-        }
-        // Continue with response even if conversion fails
+        // Return error in response - no callbacks
         conversionInfo = {
           error: conversionError.message,
           note: 'File is safe but conversion failed'
         };
-      }
-      
-      // Notify backend with converted file and SAFE status
-      if (callbackUrl && logoId && convertedFile) {
-        try {
-          console.log(`[${requestId}] 📢 Notifying backend: status -> SAFE (with converted file)`);
-          await fetch(callbackUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              status: 'SAFE',
-              convertedFile: convertedFile,
-              conversionInfo: conversionInfo,
-            }),
-          });
-          console.log(`[${requestId}] ✅ Backend notified: SAFE`);
-        } catch (callbackErr) {
-          console.error(`[${requestId}] ❌ Failed to notify backend:`, callbackErr);
-        }
       }
       
       // Clean up original temp file
