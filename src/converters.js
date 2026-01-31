@@ -202,6 +202,12 @@ export async function sanitizePdfWithGhostscript(inputPath, outputPath) {
 
 /**
  * Main conversion function - routes to appropriate converter based on file type
+ * 
+ * Conversion Rules:
+ * - DOCX → PDF (always) - Uses LibreOffice
+ * - PDF → PDF (sanitized/normalized) - Uses qpdf or Ghostscript (recommended; optional for minimum viable)
+ * - TXT → TXT (no conversion, original file returned)
+ * - Images (HEIC/HEIF/PNG/JPG/JPEG/WEBP) → WEBP - Uses libvips
  */
 export async function convertToSafeFormat(inputPath, filename, tempDir) {
   const fileType = detectFileType(filename);
@@ -260,12 +266,32 @@ export async function convertToSafeFormat(inputPath, filename, tempDir) {
     // Read the converted file
     const convertedBuffer = fs.readFileSync(outputPath);
     
+    // Map fileType to proper MIME type
+    let mimeType;
+    switch (fileType) {
+      case 'docx':
+        mimeType = 'application/pdf'; // DOCX converted to PDF
+        break;
+      case 'pdf':
+        mimeType = 'application/pdf'; // PDF sanitized, still PDF
+        break;
+      case 'txt':
+        mimeType = 'text/plain'; // TXT stays as TXT
+        break;
+      case 'image':
+      case 'heic':
+        mimeType = 'image/webp'; // Images converted to WEBP
+        break;
+      default:
+        mimeType = fileType; // Fallback
+    }
+    
     return {
       buffer: convertedBuffer,
       filename: outputFilename,
       outputPath: outputPath, // Include full path for cleanup
       conversionMethod,
-      fileType: fileType === 'image' || fileType === 'heic' ? 'webp' : (fileType === 'docx' ? 'pdf' : fileType),
+      fileType: mimeType, // Return proper MIME type
       needsCleanup: outputPath !== inputPath // Only cleanup if it's a new file
     };
     
