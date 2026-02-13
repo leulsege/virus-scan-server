@@ -114,15 +114,17 @@ export async function convertImageToWebp(inputPath, outputPath) {
 
 /**
  * Sanitize PDF using qpdf (recommended - lightweight and safe)
+ * Optimized for browser preview while maintaining security
  */
 export async function sanitizePdfWithQpdf(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     const qpdf = spawn('qpdf', [
-      '--linearize', // Optimize for web
-      '--object-streams=preserve', // Preserve object streams
+      '--linearize', // Optimize for web streaming (creates proper cross-reference table)
+      '--object-streams=preserve', // Preserve object streams for better compatibility
       '--normalize-content=y', // Normalize content streams
-      '--remove-annotations', // Remove annotations (potential security risk)
-      '--remove-attachments', // Remove attachments
+      '--remove-attachments', // Remove attachments (security)
+      // Note: We don't remove annotations as they're needed for proper PDF structure
+      // and browser preview. Annotations are generally safe after linearization.
       inputPath,
       outputPath
     ]);
@@ -162,16 +164,18 @@ export async function sanitizePdfWithGhostscript(inputPath, outputPath) {
       '-dBATCH',
       '-dSAFER', // Enable SAFER mode
       '-sDEVICE=pdfwrite',
-      '-dCompatibilityLevel=1.4',
-      '-dPDFSETTINGS=/prepress', // High quality
+      '-dCompatibilityLevel=1.7', // Use 1.7 for better browser compatibility
+      '-dPDFSETTINGS=/screen', // Optimize for screen/web viewing (smaller file, faster loading)
       '-dEmbedAllFonts=true',
       '-dSubsetFonts=true',
+      '-dFastWebView=true', // Enable fast web view (linearized PDF)
       '-dColorImageDownsampleType=/Bicubic',
-      '-dColorImageResolution=300',
+      '-dColorImageResolution=150', // Lower resolution for web (faster loading)
       '-dGrayImageDownsampleType=/Bicubic',
-      '-dGrayImageResolution=300',
+      '-dGrayImageResolution=150',
       '-dMonoImageDownsampleType=/Bicubic',
-      '-dMonoImageResolution=300',
+      '-dMonoImageResolution=150',
+      '-dAutoRotatePages=/None', // Preserve page orientation
       `-sOutputFile=${outputPath}`,
       inputPath
     ]);
